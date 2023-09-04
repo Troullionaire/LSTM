@@ -1,0 +1,317 @@
+# Importing necessary libraries
+import pandas as pd  # Data manipulation and analysis
+import numpy as np  # Numerical operations
+import matplotlib.pyplot as plt  # Plotting library
+import seaborn as sns  # Data visualization library based on matplotlib
+from datetime import datetime, timedelta  # Date and time operations
+from tensorflow.keras.models import Sequential  # Base class for Keras models
+from tensorflow.keras.layers import LSTM  # Long Short-Term Memory layer
+from tensorflow.keras.layers import Dense  # Regular densely-connected NN layer
+from sklearn.preprocessing import StandardScaler, MinMaxScaler  # Data scaling methods
+import math
+from sklearn.metrics import mean_squared_error  # Metric for regression models
+from pandas.tseries.offsets import DateOffset  # Date offset operations
+from tensorflow import keras  # TensorFlow's high-level API for building and training deep learning models
+from tensorflow.keras.callbacks import EarlyStopping  # Stop training when a monitored metric has stopped improving
+import plotly.offline as pyoff  # Offline plotting with Plotly
+import plotly.graph_objs as go  # Plotly's graph objects
+pyoff.init_notebook_mode(connected=True)  # Initialize notebook mode for offline plotting
+import matplotlib.pyplot as plt  # Plotting library (re-imported)
+from pandas.tseries.offsets import DateOffset  # Date offset operations (re-imported)
+import tensorflow as tf  # Open-source machine learning framework
+from tensorflow.keras.preprocessing.sequence import TimeseriesGenerator  # Utility to generate batches of temporal data
+from tensorflow.keras.layers import Dropout  # Dropout layer
+import warnings  # Warning control
+warnings.filterwarnings("ignore")  # Ignore warnings
+
+# Setting time parameters
+time_interval='30T'  # Time interval for resampling
+time_m=30  # Time in minutes
+
+# Solar Power Estimation
+solar_panel_size= 1.6  # Size of a single solar panel
+solar_panels_number=10  # Number of solar panels
+solar_data = pd.read_excel('solar_data.xlsx')# Reading solar data from an Excel file
+
+# Renaming columns for clarity
+solar_data = solar_data.rename(columns={
+    'Unnamed: 0': 'date',
+    'Unnamed: 1': 'start',
+    'Unnamed: 2': 'nothing',
+    'Unnamed: 3': 'radiation'})
+
+# Combining date and start columns to create a datetime column
+solar_data['start'] = pd.to_datetime(solar_data['date'].astype(str) + ' ' + solar_data['start'].astype(str))
+solar_data=solar_data[['start', 'radiation']]  # Keeping only relevant columns
+solar_data = solar_data.set_index('start')
+solar_data = solar_data.resample(time_interval).ffill()
+
+# Calculating solar power based on radiation, panel size, and number of panels
+solar_power = solar_data*0.17*solar_panel_size*solar_panels_number
+
+# Plotting the solar power data
+plt.figure(figsize=(16,10))
+plt.plot(solar_power['radiation'])
+
+
+
+# LSTM MODEL
+# Loading data from an Excel file
+data = pd.read_excel('POWERLOG 30SEC X 20 DAYS COMPLETE.xlsx',"TOTAL CHART")
+data = data.drop([0])  # Dropping the first row
+data = data[:-1]  # Dropping the last row
+data = data[:-1]  # Dropping the last row again
+
+# Renaming columns for clarity
+data_de = data.rename(columns={
+    'Unnamed: 0': 'date',
+    'Unnamed: 1': 'start',
+    'Unnamed: 2': 'solar power',
+    'Unnamed: 3': 'load',
+    'Unnamed: 4': 'generated power',
+    'Unnamed: 5': 'stored energy',})
+
+
+# Renaming columns for clarity
+data = data.rename(columns={
+    'Unnamed: 0': 'date',
+    'Unnamed: 1': 'start',
+    'Unnamed: 2': 'solar power',
+    'Unnamed: 3': 'load',
+    'Unnamed: 4': 'generated power',
+    'Unnamed: 5': 'stored energy',})
+
+
+# Combining date and start columns to create a datetime column
+data_de['start'] = pd.to_datetime(data_de['date'].astype(str) + ' ' + data_de['start'].astype(str))
+
+# Setting 'start' as the index and resampling the data
+data_de = data_de[['start', 'load']]
+data_de.set_index('start', inplace=True)
+data_de = data_de.resample(time_interval).sum()
+data_de.reset_index(inplace=True)
+data_de['start'] = pd.to_datetime(data_de['start'])
+df3=data_de['load']
+df3.index=data_de['start']
+
+# Filtering the data based on specific dates
+data_de = data_de.loc[(data_de['start'] < '2016-10-28 00:00')]
+data_de = data_de.loc[(data_de['start'] > '2016-10-31 00:00') | (data_de['start'] <= '2016-10-29 00:00')]
+data_de = data_de.loc[(data_de['start'] >= '2016-10-24 00:00') | (data_de['start'] <= '2016-10-22 00:00')]
+data_de = data_de.loc[(data_de['start'] >= '2016-10-17 00:00') | (data_de['start'] <= '2016-10-15 00:00')]
+data_de = data_de[data_de['load'] != 0]
+
+# Simulating days based on the existing data
+data_de = data_de.set_index("start")
+data_de = data_de.groupby(pd.Grouper(freq=time_interval)).sum()
+data_de['start'] = pd.to_datetime(data_de.index)
+data_dee=data_de.copy()
+data_dee.index = pd.to_datetime(data_dee.index)
+data_dee.index = data_dee.index - pd.DateOffset(days=17)
+data_dee['load'] = data_dee['load'].apply(lambda x: x * np.random.uniform(0.9, 1.1))
+data_de = pd.concat([data_dee, data_de])
+data_de['start']=data_de.index
+
+
+# Defining Data
+train_set = data_de
+train_set = train_set.set_index("start")
+data_de = data_de.set_index("start")
+data_de = data_de.groupby(pd.Grouper(freq=time_interval)).sum()
+data_de['start'] = pd.to_datetime(data_de.index)
+df = data_de.set_index("start")
+df.index = pd.to_datetime(df.index)
+df['year'] = [d.year for d in df.index]
+df['month'] = [d.strftime("%b") for d in df.index]
+
+# Preparing the training set
+train_set = data_de
+train_set = train_set.set_index("start")
+
+# Scaling the data and splitting it into training and test sets
+scaler = MinMaxScaler(feature_range=(0, 1))
+scaler = scaler.fit(train_set[['load']])
+train_set['load'] = scaler.transform(train_set[['load']])
+
+# Defining LSTM model parameters
+last_n = int(60/time_m*24)
+n_future=1
+n_past=last_n
+
+# Preparing the training data
+x_train = []
+y_train = []
+
+for i in range(n_past, len(train_set) - n_future +1):
+    x_train.append(train_set.iloc[i - n_past:i, 0:len(train_set['load'])])
+    y_train.append(train_set.iloc[i + n_future - 1:i + n_future, 0])
+
+x_train, y_train = np.array(x_train), np.array(y_train)
+
+# Defining the LSTM model
+model=Sequential()
+model.add(LSTM(128,activation='relu',return_sequences=True,input_shape=(last_n,1)))
+model.add(LSTM(64))
+model.add(Dropout(0.1))
+model.add(Dense(1))
+optimizer = keras.optimizers.Adam(learning_rate=0.01)
+model.compile(loss='mean_squared_error',optimizer='Adam')
+model.summary()
+
+# Training the model
+history = model.fit(x_train, y_train, epochs=350, batch_size=32, validation_split=0.2)
+
+# Making predictions using the trained model
+prediction = model.predict(x_train[-last_n:])
+y_pred_future = scaler.inverse_transform(prediction)[:,0]
+
+# Generating future dates for predictions
+n_steps=last_n
+n_input=last_n
+n_features=1
+train = data_de[['load']].tail(last_n)
+add_dates = [df.index[-1] + DateOffset(minutes=x*time_m) for x in range(0,n_steps+1)]
+future_dates = pd.DataFrame(index=add_dates[1:],columns=df.columns)
+
+# Generating future predictions
+future_preds = []
+last_sequence = np.array(train_set['load'])[-n_steps:]
+last_sequence = last_sequence.reshape((1, n_steps, 1))
+pred_list = []
+batch = train[-n_input:].values.reshape((1, n_input, n_features))
+
+for i in range(n_input):   
+    pred_list.append(model.predict(batch)[0]) 
+    batch = np.append(batch[:,1:,:],[[pred_list[i]]],axis=1)
+
+df_predict = pd.DataFrame(scaler.inverse_transform(pred_list),
+                          index=future_dates[-n_input:].index, columns=['Prediction'])
+df_proj = pd.concat([df,df_predict], axis=1)
+
+# Recursive Forecasting
+last_sample = x_train[-1].reshape((1, x_train.shape[1], x_train.shape[2]))
+predictions = []
+
+for _ in range(last_n):
+    next_step = model.predict(last_sample)
+    predictions.append(next_step[0])
+    last_sample = np.roll(last_sample, -1, axis=1)
+    last_sample[0, -1, :] = next_step
+
+y_pred_future = scaler.inverse_transform(predictions)[:,0]
+
+# Plot LSTM
+factor = 30/3600*60/time_m
+adjusted_actual_y = df3[last_n:-(last_n)*4] * factor
+adjusted_pred_y = y_pred_future * factor
+plot_data = [
+    go.Scatter(x=df3.index[last_n:], y=adjusted_actual_y, name='Actual'), 
+    go.Scatter(x=future_dates.index, y=adjusted_pred_y, name='Prediction')]
+
+plot_layout = go.Layout( title='Load Prediction',
+    font=dict(size=16),  # Increase the font size for the entire chart
+    xaxis=dict( title='Time',   # x-axis label
+        titlefont=dict( size=20  ) ), # Font size for the x-axis title
+    yaxis=dict( title='Watt',  # y-axis label
+        titlefont=dict(
+            size=20 )), # Font size for the y-axis title
+    
+    legend=dict(x=0.83,  # x position of the legend (1 is the far right)
+        y=1,  # y position of the legend (1 is the top)
+        traceorder="normal",  # In the order traces are added
+        font=dict(
+            family="sans-serif",
+            size=20,
+            color="black"),
+        bgcolor="white",  # Background color of the legend
+        bordercolor="Black",
+        borderwidth=2))
+fig = go.Figure(data=plot_data, layout=plot_layout)
+pyoff.iplot(fig)
+
+
+
+
+
+# User Input
+# Defining a dictionary of activities and their associated energy consumption
+activities_energy = {
+    "EB": 20000, # Electric Boiler
+    "TH": 2500, # Temporary Housing
+    "EV": 7200, # Electric Vehicle Charging
+    "IT": 5420 # Intensive Telecommunications Usage
+}
+
+# Function to calculate energy consumption based on user input
+def calculate_energy(activity, start_time, duration):
+    start_time = datetime.strptime(start_time, "%Y-%m-%d %H:%M")
+    duration = duration * 60
+    end_time = start_time + timedelta(minutes=duration)
+    total_energy = activities_energy[activity] * duration / 60
+    time_steps = pd.date_range(start_time, end_time, freq=f'{time_m}min')[:-1]
+    energy_per_time_step = total_energy / len(time_steps)
+    energy_data = pd.DataFrame({
+        "Time Step": time_steps,
+        "Energy Consumed (Wh)": np.repeat(energy_per_time_step, len(time_steps))
+    })
+    return energy_data
+
+# Getting user input and calculating energy consumption
+activity = input("Enter the activity: ")
+start_time = input("Enter the start time (YYYY-MM-DD HH:MM): ")
+duration = int(input("Enter the duration in hours: "))
+user_input = calculate_energy(activity, start_time, duration)
+print(user_input)
+user_input=user_input.set_index("Time Step")
+
+# Energy Management
+energy_threshold = 1000
+engine_watt=1.891
+Seperator_freq='30T'
+Seperator_time=30
+final_data = pd.DataFrame(columns=['start', 'solar power', 'load', 'generated power', 'stored energy'])
+final_data['start']=future_dates.index
+final_data.set_index('start', inplace=True)
+final_data['load'] = y_pred_future
+final_data['load'] = final_data['load'].values*30/3600
+final_data['generated power'] = 0
+final_data['solar power'][:]=solar_power['radiation'][1:].reset_index(drop=True)
+final_data['solar power']=final_data['solar power'].values*time_m/60
+user_input = user_input.reindex(final_data.index, fill_value=0)
+final_data = final_data.join(user_input['Energy Consumed (Wh)'])
+final_data = final_data.rename(columns={
+    'Energy Consumed (Wh)': 'user input',})
+
+# Energy management calculations
+new_row_df = pd.DataFrame(
+    {
+        'solar power': [data['solar power'].values[-1]],  
+        'load': [sum(data['load'].values[-time_m*2:])*30/3600], 
+        'generated power': [data['generated power'].values[-1]],  
+        'stored energy': [data['stored energy'].values[-1]],
+    },
+    index=[final_data.index[0] - timedelta(minutes=time_m)])
+final_data = new_row_df.append(final_data)
+final_data /= time_m/Seperator_time
+final_data = final_data.resample(Seperator_freq).ffill()
+final_data.at[final_data.index[0],'stored energy']= (data['stored energy'].values[-1])
+
+j=0
+for i in range(len(final_data['load'])-1):
+    j=j+1
+    final_data['stored energy'].values[j]=(final_data['stored energy'].values[i]
+    +(final_data['solar power'].values[j] - final_data['load'].values[j])  
+    + final_data['generated power'].values[j]-final_data['user input'].values[j])
+
+gen_p= (engine_watt*60*Seperator_time)
+energy_requirement =  -final_data['stored energy'].min()
+
+while final_data['stored energy'].min() < 500:
+    low_battery_step = final_data.reset_index().index[final_data['stored energy'] < (energy_threshold)][0]
+    final_data['generated power'].values[(low_battery_step-1)] = gen_p
+    j=0
+    for i in range(len(final_data['load'])-1):
+        j=j+1
+        final_data['stored energy'].values[j]=(final_data['stored energy'].values[i]
+        +(final_data['solar power'].values[j] - final_data['load'].values[j]) + final_data['generated power'].values[j]-final_data['user input'].values[j])  
+final_data
